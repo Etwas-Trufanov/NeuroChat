@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import messagebox, simpledialog, scrolledtext
+from tkinter import messagebox, scrolledtext
 import socket
 import threading
 import json
@@ -8,19 +8,19 @@ from datetime import datetime
 class ChatClient:
     def __init__(self, root):
         self.root = root
-        self.root.title("Простой мессенджер")
-        self.root.geometry("500x600")
+        self.root.title("NeuroChat - Мессенджер")
+        self.root.geometry("900x600")
         
         self.server_socket = None
         self.username = None
         self.server_host = None
         self.server_port = None
-        self.users_list = []
-        self.users_list_lock = threading.Lock()
+        self.current_chat = None  # Текущий активный чат
+        self.chats = {}  # {username: [messages]}
+        self.chats_lock = threading.Lock()
         
         self.create_login_screen()
         
-        # Поток для получения сообщений
         self.receive_thread = None
         self.running = True
     
@@ -32,10 +32,8 @@ class ChatClient:
             discovery_socket.settimeout(10)
             
             print("[CLIENT] Отправляю запрос поиска сервера...")
-            # Отправляем broadcast запрос
             discovery_socket.sendto(b"DISCOVER_SERVER", ('<broadcast>', 12345))
             
-            # Ждем ответа
             try:
                 response, addr = discovery_socket.recvfrom(1024)
                 print(f"[CLIENT] Получен ответ: {response.decode()} от {addr}")
@@ -79,7 +77,6 @@ class ChatClient:
             self.server_socket.send(json.dumps(message).encode())
             if not wait_response:
                 return None
-            # Для login/register ждем ответ с блокировкой сокета
             response = self.server_socket.recv(1024).decode()
             print(f"[CLIENT] Получен ответ: {response}")
             return response
@@ -95,7 +92,8 @@ class ChatClient:
         frame = tk.Frame(self.root, padx=20, pady=20)
         frame.pack(expand=True)
         
-        tk.Label(frame, text="Простой мессенджер", font=("Arial", 16, "bold")).pack(pady=10)
+        tk.Label(frame, text="NeuroChat", font=("Arial", 24, "bold")).pack(pady=20)
+        tk.Label(frame, text="Мессенджер", font=("Arial", 12)).pack(pady=(0, 20))
         
         tk.Label(frame, text="Имя пользователя:").pack(anchor=tk.W, pady=(10, 0))
         username_entry = tk.Entry(frame, width=30)
@@ -126,6 +124,7 @@ class ChatClient:
                     self.username = username
                     self.create_chat_screen()
                     self.start_receive_thread()
+                    self.request_chats_list()
                 else:
                     messagebox.showerror("Ошибка входа", data.get("message", "Неизвестная ошибка"))
         
@@ -155,10 +154,8 @@ class ChatClient:
                 data = json.loads(response)
                 if data.get("status") == "success":
                     messagebox.showinfo("Успех", "Регистрация успешна! Входим в аккаунт...")
-                    # Закрываем соединение и переподключаемся для входа
                     self.server_socket.close()
                     self.server_socket = None
-                    # Автоматический вход после регистрации
                     perform_login(username, password)
                 else:
                     messagebox.showerror("Ошибка регистрации", data.get("message", "Неизвестная ошибка"))
@@ -170,92 +167,192 @@ class ChatClient:
         tk.Button(button_frame, text="Регистрация", command=register, width=15).pack(side=tk.LEFT, padx=5)
     
     def create_chat_screen(self):
-        """Создает экран чата"""
+        """Создает экран чата с двумя панелями (Telegram-style)"""
         self.clear_window()
         
-        # Заголовок
-        tk.Label(self.root, text=f"Чат (Пользователь: {self.username})", 
-                 font=("Arial", 12, "bold")).pack(pady=10)
+        # Основной контейнер
+        main_frame = tk.Frame(self.root)
+        main_frame.pack(fill=tk.BOTH, expand=True)
         
-        # Чат
-        self.chat_display = scrolledtext.ScrolledText(self.root, height=20, width=60, state=tk.DISABLED)
-        self.chat_display.pack(padx=10, pady=5)
+        # ========== ЛЕВАЯ ПАНЕЛЬ (Список чатов) ==========
+        left_frame = tk.Frame(main_frame, width=250, bg="#f0f0f0")
+        left_frame.pack(side=tk.LEFT, fill=tk.BOTH, padx=5, pady=5)
+        left_frame.pack_propagate(False)
+        
+        tk.Label(left_frame, text=f"Чаты", font=("Arial", 14, "bold"), bg="#f0f0f0").pack(pady=10)
+        
+        # Кнопка добавить новый чат
+        tk.Button(left_frame, text="+ Новый чат", command=self.add_new_chat, 
+                 width=25, bg="#4CAF50", fg="white").pack(pady=5, padx=5)
+        
+        # Список чатов
+        self.chats_listbox = tk.Listbox(left_frame, height=30, width=30, font=("Arial", 10))
+        self.chats_listbox.pack(pady=5, padx=5, fill=tk.BOTH, expand=True)
+        self.chats_listbox.bind('<<ListboxSelect>>', self.on_chat_selected)
+        
+        # Кнопка выхода
+        tk.Button(left_frame, text="Выход", command=self.logout, 
+                 width=25, bg="#f44336", fg="white").pack(pady=5, padx=5)
+        
+        # ========== ПРАВАЯ ПАНЕЛЬ (Сообщения и ввод) ==========
+        right_frame = tk.Frame(main_frame)
+        right_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=5, pady=5)
+        
+        # Заголовок с именем пользователя
+        self.chat_header = tk.Label(right_frame, text="Выберите чат", 
+                                    font=("Arial", 14, "bold"))
+        self.chat_header.pack(pady=10)
+        
+        # Дисплей сообщений
+        self.chat_display = scrolledtext.ScrolledText(right_frame, height=20, width=60, 
+                                                      state=tk.DISABLED, wrap=tk.WORD)
+        self.chat_display.pack(padx=5, pady=5, fill=tk.BOTH, expand=True)
         
         # Поле для ввода сообщения
-        input_frame = tk.Frame(self.root)
-        input_frame.pack(padx=10, pady=5, fill=tk.X)
+        input_frame = tk.Frame(right_frame)
+        input_frame.pack(padx=5, pady=5, fill=tk.X)
         
-        tk.Label(input_frame, text="Кому:").pack(side=tk.LEFT)
-        self.recipient_entry = tk.Entry(input_frame, width=15)
-        self.recipient_entry.pack(side=tk.LEFT, padx=5)
+        tk.Label(input_frame, text="Сообщение:").pack(anchor=tk.W)
+        self.message_entry = tk.Entry(input_frame, width=60)
+        self.message_entry.pack(pady=5, fill=tk.X)
+        self.message_entry.bind('<Return>', lambda e: self.send_message())
         
-        tk.Button(input_frame, text="Список пользователей", 
-                 command=self.show_users_list).pack(side=tk.LEFT, padx=5)
-        
-        # Сообщение
-        tk.Label(self.root, text="Сообщение:").pack(anchor=tk.W, padx=10)
-        self.message_entry = scrolledtext.ScrolledText(self.root, height=4, width=60)
-        self.message_entry.pack(padx=10, pady=5)
-        
-        # Кнопки
-        button_frame = tk.Frame(self.root)
-        button_frame.pack(pady=10)
-        
-        tk.Button(button_frame, text="Отправить", 
-                 command=self.send_message, width=15).pack(side=tk.LEFT, padx=5)
-        tk.Button(button_frame, text="Выход", 
-                 command=self.logout, width=15).pack(side=tk.LEFT, padx=5)
+        # Кнопка отправить
+        tk.Button(input_frame, text="Отправить", command=self.send_message, 
+                 width=20, bg="#2196F3", fg="white").pack(pady=5)
     
-    def show_users_list(self):
-        """Показывает список пользователей"""
-        try:
-            # Отправляем запрос в отдельном потоке
-            def request_users():
+    def request_chats_list(self):
+        """Запрашивает список пользователей для начала чата"""
+        def request_users():
+            try:
                 self.server_socket.send(json.dumps({"action": "get_users"}).encode())
+            except:
+                pass
+        
+        thread = threading.Thread(target=request_users, daemon=True)
+        thread.start()
+    
+    def add_new_chat(self):
+        """Диалог для добавления нового чата"""
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Новый чат")
+        dialog.geometry("300x150")
+        dialog.transient(self.root)
+        dialog.grab_set()
+        
+        tk.Label(dialog, text="Имя пользователя:").pack(pady=10)
+        username_entry = tk.Entry(dialog, width=30)
+        username_entry.pack(pady=5)
+        
+        def add_chat():
+            recipient = username_entry.get().strip()
+            if not recipient:
+                messagebox.showwarning("Внимание", "Введите имя пользователя!")
+                return
             
-            thread = threading.Thread(target=request_users, daemon=True)
-            thread.start()
+            if recipient == self.username:
+                messagebox.showwarning("Внимание", "Нельзя написать самому себе!")
+                return
             
-            # Показываем текущий список (обновится через receive_messages)
-            with self.users_list_lock:
-                users = [u for u in self.users_list if u != self.username]
+            with self.chats_lock:
+                if recipient not in self.chats:
+                    self.chats[recipient] = []
+                    self.update_chats_listbox()
+                    self.current_chat = recipient
+                    self.on_chat_selected(None)
             
-            if users:
-                users_text = "\n".join(users)
-                messagebox.showinfo("Пользователи", users_text)
-            else:
-                messagebox.showinfo("Пользователи", "Других пользователей нет")
-        except Exception as e:
-            messagebox.showerror("Ошибка", str(e))
+            dialog.destroy()
+        
+        tk.Button(dialog, text="Добавить", command=add_chat, width=15).pack(pady=10)
+    
+    def on_chat_selected(self, event):
+        """При выборе чата из списка"""
+        selection = self.chats_listbox.curselection()
+        if selection:
+            self.current_chat = self.chats_listbox.get(selection[0])
+            self.chat_header.config(text=f"Чат с {self.current_chat}")
+            self.load_chat_history()
+            self.display_current_chat()
+    
+    def load_chat_history(self):
+        """Загружает историю чата с сервера"""
+        if not self.current_chat:
+            return
+        
+        def request_history():
+            try:
+                self.server_socket.send(json.dumps({
+                    "action": "get_chat_history",
+                    "other_user": self.current_chat
+                }).encode())
+            except:
+                pass
+        
+        thread = threading.Thread(target=request_history, daemon=True)
+        thread.start()
+    
+    def display_current_chat(self):
+        """Отображает текущий чат"""
+        self.chat_display.config(state=tk.NORMAL)
+        self.chat_display.delete("1.0", tk.END)
+        
+        with self.chats_lock:
+            messages = self.chats.get(self.current_chat, [])
+            for msg in messages:
+                sender = msg.get("sender")
+                text = msg.get("text")
+                timestamp = msg.get("timestamp")
+                
+                if sender == self.username:
+                    display_text = f"[{timestamp}] Вы: {text}\n"
+                else:
+                    display_text = f"[{timestamp}] {sender}: {text}\n"
+                
+                self.chat_display.insert(tk.END, display_text)
+        
+        self.chat_display.see(tk.END)
+        self.chat_display.config(state=tk.DISABLED)
     
     def send_message(self):
         """Отправляет сообщение"""
-        recipient = self.recipient_entry.get()
-        text = self.message_entry.get("1.0", tk.END).strip()
+        if not self.current_chat:
+            messagebox.showwarning("Внимание", "Выберите чат!")
+            return
         
-        if not recipient or not text:
-            messagebox.showwarning("Внимание", "Заполните все поля!")
+        text = self.message_entry.get().strip()
+        if not text:
             return
         
         try:
             self.server_socket.send(json.dumps({
                 "action": "send_message",
-                "recipient": recipient,
+                "recipient": self.current_chat,
                 "text": text
             }).encode())
             
-            # Сразу показываем отправленное сообщение
-            self.add_to_chat(f"[{datetime.now().strftime('%H:%M:%S')}] Вы -> {recipient}: {text}", "sent")
-            self.message_entry.delete("1.0", tk.END)
+            # Добавляем сообщение локально
+            msg_data = {
+                "sender": self.username,
+                "text": text,
+                "timestamp": datetime.now().strftime("%H:%M:%S")
+            }
+            
+            with self.chats_lock:
+                if self.current_chat not in self.chats:
+                    self.chats[self.current_chat] = []
+                self.chats[self.current_chat].append(msg_data)
+            
+            self.display_current_chat()
+            self.message_entry.delete(0, tk.END)
         except Exception as e:
             messagebox.showerror("Ошибка отправки", str(e))
     
-    def add_to_chat(self, message, message_type="received"):
-        """Добавляет сообщение в окно чата"""
-        self.chat_display.config(state=tk.NORMAL)
-        self.chat_display.insert(tk.END, message + "\n")
-        self.chat_display.see(tk.END)
-        self.chat_display.config(state=tk.DISABLED)
+    def update_chats_listbox(self):
+        """Обновляет список чатов в левой панели"""
+        self.chats_listbox.delete(0, tk.END)
+        with self.chats_lock:
+            for username in sorted(self.chats.keys()):
+                self.chats_listbox.insert(tk.END, username)
     
     def start_receive_thread(self):
         """Запускает поток получения сообщений"""
@@ -276,12 +373,41 @@ class ChatClient:
                     sender = message.get("sender")
                     text = message.get("text")
                     timestamp = message.get("timestamp")
-                    self.add_to_chat(f"[{timestamp}] {sender}: {text}", "received")
+                    
+                    msg_data = {
+                        "sender": sender,
+                        "text": text,
+                        "timestamp": timestamp
+                    }
+                    
+                    with self.chats_lock:
+                        if sender not in self.chats:
+                            self.chats[sender] = []
+                        self.chats[sender].append(msg_data)
+                        
+                        # Обновляем список чатов
+                        self.update_chats_listbox()
+                        
+                        # Если это текущий активный чат, обновляем дисплей
+                        if self.current_chat == sender:
+                            self.display_current_chat()
                 
                 elif message.get("action") == "users_list":
                     users = message.get("users", [])
-                    with self.users_list_lock:
-                        self.users_list = users
+                    with self.chats_lock:
+                        for user in users:
+                            if user != self.username and user not in self.chats:
+                                self.chats[user] = []
+                        self.update_chats_listbox()
+                
+                elif message.get("action") == "chat_history":
+                    other_user = message.get("other_user")
+                    history = message.get("messages", [])
+                    
+                    with self.chats_lock:
+                        self.chats[other_user] = history
+                        if self.current_chat == other_user:
+                            self.display_current_chat()
             
             except Exception as e:
                 if self.running:
@@ -299,6 +425,8 @@ class ChatClient:
         
         self.username = None
         self.server_socket = None
+        self.current_chat = None
+        self.chats = {}
         self.create_login_screen()
     
     def clear_window(self):

@@ -6,7 +6,7 @@ from datetime import datetime
 # Глобальные переменные
 users = {}  # {username: password}
 user_connections = {}  # {username: (socket, address)}
-message_queue = {}  # {username: [messages]}
+chat_history = {}  # {(user1, user2): [messages]} где user1 < user2 (отсортированы)
 
 def broadcast_discovery(port):
     """Отвечает на поиск сервера в сети"""
@@ -63,7 +63,6 @@ def handle_client(conn, addr, port):
                     conn.send(json.dumps({"status": "error", "message": "Пользователь уже существует"}).encode())
                 else:
                     users[username] = password
-                    message_queue[username] = []
                     conn.send(json.dumps({"status": "success", "message": "Регистрация успешна"}).encode())
                     print(f"[REGISTER] Зарегистрирован пользователь {username}")
             
@@ -83,18 +82,26 @@ def handle_client(conn, addr, port):
             
             # Отправка сообщения
             elif action == "send_message":
+                sender = username
                 recipient = message.get("recipient")
                 text = message.get("text")
                 
                 if recipient not in users:
                     conn.send(json.dumps({"status": "error", "message": "Получатель не найден"}).encode())
                 else:
+                    # Создаем уникальный ключ чата (сортируем имена)
+                    chat_key = tuple(sorted([sender, recipient]))
+                    if chat_key not in chat_history:
+                        chat_history[chat_key] = []
+                    
                     msg_data = {
-                        "sender": username,
+                        "sender": sender,
                         "text": text,
                         "timestamp": datetime.now().strftime("%H:%M:%S")
                     }
-                    message_queue[recipient].append(msg_data)
+                    
+                    # Сохраняем в историю
+                    chat_history[chat_key].append(msg_data)
                     
                     # Если получатель онлайн, отправить напрямую
                     if recipient in user_connections:
@@ -102,7 +109,7 @@ def handle_client(conn, addr, port):
                             recipient_conn = user_connections[recipient][0]
                             recipient_conn.send(json.dumps({
                                 "action": "receive_message",
-                                "sender": username,
+                                "sender": sender,
                                 "text": text,
                                 "timestamp": msg_data["timestamp"]
                             }).encode())
@@ -110,16 +117,20 @@ def handle_client(conn, addr, port):
                             pass
                     
                     conn.send(json.dumps({"status": "success", "message": "Сообщение отправлено"}).encode())
-                    print(f"[MESSAGE] {username} -> {recipient}: {text}")
+                    print(f"[MESSAGE] {sender} -> {recipient}: {text}")
             
-            # Получение сохраненных сообщений
-            elif action == "get_messages":
-                messages = message_queue.get(username, [])
-                conn.send(json.dumps({
-                    "action": "messages",
-                    "messages": messages
-                }).encode())
-                message_queue[username] = []
+            # Получение истории чата
+            elif action == "get_chat_history":
+                other_user = message.get("other_user")
+                if other_user and other_user in users:
+                    chat_key = tuple(sorted([username, other_user]))
+                    history = chat_history.get(chat_key, [])
+                    conn.send(json.dumps({
+                        "action": "chat_history",
+                        "other_user": other_user,
+                        "messages": history
+                    }).encode())
+                    print(f"[HISTORY] Отправлена история чата {chat_key}")
             
             # Получение списка пользователей
             elif action == "get_users":
@@ -128,6 +139,7 @@ def handle_client(conn, addr, port):
                     "action": "users_list",
                     "users": user_list
                 }).encode())
+                print(f"[USERS] Отправлен список пользователей клиенту {addr}")
                 print(f"[USERS] Отправлен список пользователей клиенту {addr}")
     
     except Exception as e:
