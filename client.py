@@ -106,83 +106,83 @@ class ChatClient:
             # Default tkinter light colors
             return ("#ffffff", "#000000", "#cce6ff")
 
-        def start_theme_monitor(self, interval=1000):
-            # Start polling for theme changes
-            def poll():
+    def start_theme_monitor(self, interval=1000):
+        # Start polling for theme changes
+        def poll():
+            try:
+                theme = None
+                if USE_CTK:
+                    theme = ctk.get_appearance_mode()
+                else:
+                    theme = 'Light'
+                if theme != self.current_theme:
+                    self.current_theme = theme
+                    self.update_theme()
+            except Exception:
+                pass
+            if self.running:
                 try:
-                    theme = None
-                    if USE_CTK:
-                        theme = ctk.get_appearance_mode()
-                    else:
-                        theme = 'Light'
-                    if theme != self.current_theme:
-                        self.current_theme = theme
-                        self.update_theme()
+                    self.root.after(interval, poll)
                 except Exception:
                     pass
-                if self.running:
-                    try:
-                        self.root.after(interval, poll)
-                    except Exception:
-                        pass
-            poll()
+        poll()
 
-        def update_theme(self):
-            bg, fg, selbg = self.get_theme_colors()
-            # Apply to chat display
-            try:
-                self.chat_display.config(bg=bg, fg=fg)
-            except Exception:
-                pass
-            # Apply to input
-            try:
-                self.message_entry.config(bg=bg, fg=fg, insertbackground=fg)
-            except Exception:
-                pass
-            # Apply to listbox
-            try:
-                self.chats_listbox.config(bg=bg, fg=fg, selectbackground=selbg)
-                # Re-render list to apply styling markers
-                self.update_chats_listbox()
-            except Exception:
-                pass
-            # Apply menu/theme options
-            try:
-                self.apply_theme_to_root()
-            except Exception:
-                pass
-            # Also try to recolor existing menu
-            try:
-                mname = self.root.cget('menu')
-                if mname:
+    def update_theme(self):
+        bg, fg, selbg = self.get_theme_colors()
+        # Apply to chat display
+        try:
+            self.chat_display.config(bg=bg, fg=fg)
+        except Exception:
+            pass
+        # Apply to input
+        try:
+            self.message_entry.config(bg=bg, fg=fg, insertbackground=fg)
+        except Exception:
+            pass
+        # Apply to listbox
+        try:
+            self.chats_listbox.config(bg=bg, fg=fg, selectbackground=selbg)
+            # Re-render list to apply styling markers
+            self.update_chats_listbox()
+        except Exception:
+            pass
+        # Apply menu/theme options
+        try:
+            self.apply_theme_to_root()
+        except Exception:
+            pass
+        # Also try to recolor existing menu
+        try:
+            mname = self.root.cget('menu')
+            if mname:
+                try:
+                    menu_widget = self.root.nametowidget(mname)
+                    menu_widget.config(bg=bg, fg=fg, activebackground=selbg, activeforeground=fg)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        # Style send button if present
+        try:
+            if hasattr(self, 'send_btn'):
+                if USE_CTK:
+                    # CTkButton uses fg_color
                     try:
-                        menu_widget = self.root.nametowidget(mname)
-                        menu_widget.config(bg=bg, fg=fg, activebackground=selbg, activeforeground=fg)
+                        mode = ctk.get_appearance_mode()
+                        if mode == 'Dark':
+                            self.send_btn.configure(fg_color="#2b7bd3", text_color="#ffffff")
+                        else:
+                            self.send_btn.configure(fg_color="#1976d2", text_color="#ffffff")
                     except Exception:
                         pass
-            except Exception:
-                pass
-            # Style send button if present
-            try:
-                if hasattr(self, 'send_btn'):
-                    if USE_CTK:
-                        # CTkButton uses fg_color
-                        try:
-                            mode = ctk.get_appearance_mode()
-                            if mode == 'Dark':
-                                self.send_btn.configure(fg_color="#2b7bd3", text_color="#ffffff")
-                            else:
-                                self.send_btn.configure(fg_color="#1976d2", text_color="#ffffff")
-                        except Exception:
-                            pass
-                    else:
-                        # Tk Button
-                        try:
-                            self.send_btn.configure(bg=selbg, fg=fg)
-                        except Exception:
-                            pass
-            except Exception:
-                pass
+                else:
+                    # Tk Button
+                    try:
+                        self.send_btn.configure(bg=selbg, fg=fg)
+                    except Exception:
+                        pass
+        except Exception:
+            pass
 
     def apply_theme_to_root(self):
         # Apply menu colors and other global settings based on current theme
