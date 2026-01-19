@@ -296,12 +296,16 @@ class ChatClient:
             if recipient == self.username:
                 messagebox.showwarning("Внимание", "Нельзя написать самому себе!")
                 return
+            
+            dialog.destroy()
+            
             with self.chats_lock:
                 if recipient not in self.chats:
                     self.chats[recipient] = []
                 self.current_chat = recipient
-                self.update_chats_listbox()
-            dialog.destroy()
+            
+            self.update_chats_listbox()
+            self.display_current_chat()
 
         add_btn.config(command=add_chat_from_choice)
         add_btn.config(state=tk.DISABLED)
