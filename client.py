@@ -28,6 +28,12 @@ import threading
 import json
 from datetime import datetime
 from queue import Queue, Empty
+import tkinter.font as tkfont
+import sys
+try:
+    from plyer import notification as plyer_notify
+except Exception:
+    plyer_notify = None
 
 class ChatClient:
     def __init__(self, root):
@@ -56,6 +62,19 @@ class ChatClient:
         self.running = True
         
         self.send_queue = Queue()
+
+        # Unread chats set
+        self.unread_chats = set()
+        # Theme tracking
+        self.current_theme = None
+        # Fonts
+        preferred = "Segoe UI" if sys.platform.startswith("win") else "Helvetica"
+        self.font_header = tkfont.Font(family=preferred, size=18, weight="bold")
+        self.font_list = tkfont.Font(family=preferred, size=12)
+        self.font_message = tkfont.Font(family=preferred, size=11)
+        self.font_entry = tkfont.Font(family=preferred, size=12)
+
+        self.start_theme_monitor()
         
         self.create_login_screen()
         self.start_ui_update_thread()
@@ -86,6 +105,84 @@ class ChatClient:
         else:
             # Default tkinter light colors
             return ("#ffffff", "#000000", "#cce6ff")
+
+        def start_theme_monitor(self, interval=1000):
+            # Start polling for theme changes
+            def poll():
+                try:
+                    theme = None
+                    if USE_CTK:
+                        theme = ctk.get_appearance_mode()
+                    else:
+                        theme = 'Light'
+                    if theme != self.current_theme:
+                        self.current_theme = theme
+                        self.update_theme()
+                except Exception:
+                    pass
+                if self.running:
+                    try:
+                        self.root.after(interval, poll)
+                    except Exception:
+                        pass
+            poll()
+
+        def update_theme(self):
+            bg, fg, selbg = self.get_theme_colors()
+            # Apply to chat display
+            try:
+                self.chat_display.config(bg=bg, fg=fg)
+            except Exception:
+                pass
+            # Apply to input
+            try:
+                self.message_entry.config(bg=bg, fg=fg, insertbackground=fg)
+            except Exception:
+                pass
+            # Apply to listbox
+            try:
+                self.chats_listbox.config(bg=bg, fg=fg, selectbackground=selbg)
+                # Re-render list to apply styling markers
+                self.update_chats_listbox()
+            except Exception:
+                pass
+            # Apply menu/theme options
+            try:
+                self.apply_theme_to_root()
+            except Exception:
+                pass
+            # Also try to recolor existing menu
+            try:
+                mname = self.root.cget('menu')
+                if mname:
+                    try:
+                        menu_widget = self.root.nametowidget(mname)
+                        menu_widget.config(bg=bg, fg=fg, activebackground=selbg, activeforeground=fg)
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+            # Style send button if present
+            try:
+                if hasattr(self, 'send_btn'):
+                    if USE_CTK:
+                        # CTkButton uses fg_color
+                        try:
+                            mode = ctk.get_appearance_mode()
+                            if mode == 'Dark':
+                                self.send_btn.configure(fg_color="#2b7bd3", text_color="#ffffff")
+                            else:
+                                self.send_btn.configure(fg_color="#1976d2", text_color="#ffffff")
+                        except Exception:
+                            pass
+                    else:
+                        # Tk Button
+                        try:
+                            self.send_btn.configure(bg=selbg, fg=fg)
+                        except Exception:
+                            pass
+            except Exception:
+                pass
 
     def apply_theme_to_root(self):
         # Apply menu colors and other global settings based on current theme
@@ -152,12 +249,24 @@ class ChatClient:
         self.clear_window()
         frame = FrameWidget(self.root)
         frame.pack(expand=True, padx=20, pady=20)
-        LabelWidget(frame, text="NeuroChat", font=("Arial", 24, "bold")).pack(pady=20)
+        LabelWidget(frame, text="NeuroChat").pack(pady=20)
+        try:
+            LabelWidget(frame, text="NeuroChat").config(font=self.font_header)
+        except Exception:
+            pass
         LabelWidget(frame, text="Имя:").pack(anchor=tk.W)
         username_entry = EntryWidget(frame)
+        try:
+            username_entry.configure(font=self.font_entry)
+        except Exception:
+            pass
         username_entry.pack(pady=5, fill=tk.X)
         LabelWidget(frame, text="Пароль:").pack(anchor=tk.W)
         password_entry = EntryWidget(frame, show="*")
+        try:
+            password_entry.configure(font=self.font_entry)
+        except Exception:
+            pass
         password_entry.pack(pady=5, fill=tk.X)
         
         def perform_login(username, password):
@@ -259,7 +368,7 @@ class ChatClient:
         LabelWidget(left_frame, text="Чаты", font=("Arial", 14, "bold")).pack(pady=10)
         ButtonWidget(left_frame, text="+ Новый", command=self.add_new_chat, width=150).pack(pady=6)
 
-        self.chats_listbox = tk.Listbox(left_frame, height=30, width=30)
+        self.chats_listbox = tk.Listbox(left_frame, height=30, width=30, font=self.font_list)
         self.chats_listbox.pack(pady=5, padx=5, fill=tk.BOTH, expand=True)
         self.chats_listbox.bind('<<ListboxSelect>>', self.on_chat_selected)
         # Style listbox according to theme
@@ -272,13 +381,17 @@ class ChatClient:
         right_frame = FrameWidget(main_frame)
         right_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=8, pady=8)
 
-        self.chat_header = LabelWidget(right_frame, text="Выберите чат", font=("Arial", 12, "bold"))
+        self.chat_header = LabelWidget(right_frame, text="Выберите чат")
+        try:
+            self.chat_header.configure(font=self.font_header)
+        except Exception:
+            pass
         self.chat_header.pack(pady=10)
 
         # Use TextWidget (CTkTextbox or ScrolledText)
         # Use ScrolledText for reliable behavior and style it
         chat_bg, chat_fg, _ = self.get_theme_colors()
-        self.chat_display = scrolledtext.ScrolledText(right_frame, height=12, width=60, bg=chat_bg, fg=chat_fg, wrap=tk.WORD)
+        self.chat_display = scrolledtext.ScrolledText(right_frame, height=12, width=60, bg=chat_bg, fg=chat_fg, wrap=tk.WORD, font=self.font_message)
         try:
             # CTkTextbox doesn't support state via constructor
             self.chat_display.configure(state=tk.DISABLED)
@@ -293,12 +406,16 @@ class ChatClient:
 
         # Многострочное поле ввода
         entry_bg, entry_fg, _ = self.get_theme_colors()
-        self.message_entry = scrolledtext.ScrolledText(input_frame, height=4, width=60, bg=entry_bg, fg=entry_fg, wrap=tk.WORD, insertbackground=entry_fg)
+        self.message_entry = scrolledtext.ScrolledText(input_frame, height=4, width=60, bg=entry_bg, fg=entry_fg, wrap=tk.WORD, insertbackground=entry_fg, font=self.font_entry)
         self.message_entry.pack(side=tk.LEFT, pady=5, padx=(0, 5), fill=tk.BOTH, expand=True)
 
         # Кнопка отправить справа
-        send_btn = ButtonWidget(input_frame, text="Отправить", command=self.send_message, width=120)
-        send_btn.pack(side=tk.LEFT, padx=5)
+        self.send_btn = ButtonWidget(input_frame, text="Отправить", command=self.send_message, width=120)
+        try:
+            self.send_btn.configure(font=self.font_entry)
+        except Exception:
+            pass
+        self.send_btn.pack(side=tk.LEFT, padx=5)
         
         # Bind Enter и Shift+Enter
         self.message_entry.bind('<Return>', self.on_message_key)
@@ -353,6 +470,9 @@ class ChatClient:
                 if recipient not in self.chats:
                     self.chats[recipient] = []
                 self.current_chat = recipient
+            # clear unread for this chat
+            if recipient in self.unread_chats:
+                self.unread_chats.discard(recipient)
             self.update_chats_listbox()
             self.display_current_chat()
             self.send_to_server({"action": "get_chat_history", "other_user": recipient})
@@ -382,8 +502,16 @@ class ChatClient:
     def on_chat_selected(self, event):
         selection = self.chats_listbox.curselection()
         if selection:
-            self.current_chat = self.chats_listbox.get(selection[0])
+            sel_text = self.chats_listbox.get(selection[0])
+            # remove unread marker if present
+            if sel_text.startswith("🔴 "):
+                sel_text = sel_text[2:]
+            self.current_chat = sel_text
             self.chat_header.config(text=f"Чат с {self.current_chat}")
+            # clear unread
+            if self.current_chat in self.unread_chats:
+                self.unread_chats.discard(self.current_chat)
+            self.update_chats_listbox()
             self.display_current_chat()
             self.send_to_server({"action": "get_chat_history", "other_user": self.current_chat})
     
@@ -423,7 +551,22 @@ class ChatClient:
         self.chats_listbox.delete(0, tk.END)
         with self.chats_lock:
             for user in sorted(self.chats.keys()):
-                self.chats_listbox.insert(tk.END, user)
+                label = user
+                if user in self.unread_chats:
+                    # prepend red dot indicator
+                    label = "🔴 " + label
+                self.chats_listbox.insert(tk.END, label)
+        # Try to color unread items red if supported
+        try:
+            for idx in range(self.chats_listbox.size()):
+                text = self.chats_listbox.get(idx)
+                if text.startswith("🔴 "):
+                    try:
+                        self.chats_listbox.itemconfig(idx, fg="#ff4d4d")
+                    except Exception:
+                        pass
+        except Exception:
+            pass
     
     def start_receive_thread(self):
         self.receive_thread = threading.Thread(target=self.receive_messages, daemon=True)
@@ -451,8 +594,27 @@ class ChatClient:
                         if sender not in self.chats:
                             self.chats[sender] = []
                         self.chats[sender].append(msg_data)
+                    # Mark unread if not viewing this chat or app not focused
+                    focused = (self.root.focus_displayof() is not None)
+                    minimized = False
+                    try:
+                        minimized = (str(self.root.state()) == 'iconic')
+                    except Exception:
+                        minimized = False
+                    if self.current_chat != sender or (not focused) or minimized:
+                        self.unread_chats.add(sender)
+                        # send desktop notification if possible
+                        try:
+                            if plyer_notify:
+                                plyer_notify.notify(title=f"New message from {sender}", message=text, timeout=5)
+                        except Exception:
+                            pass
+                    # Update UI
                     self.event_queue.put(("update_chats_list", None))
                     if self.current_chat == sender:
+                        # If currently viewing, clear unread mark
+                        if sender in self.unread_chats:
+                            self.unread_chats.discard(sender)
                         self.event_queue.put(("display_chat", None))
                 
                 elif msg.get("action") == "chat_history":
