@@ -277,7 +277,11 @@ class ChatClient:
 
         choice_initial = candidates[0] if candidates else ""
         choice_var.set(choice_initial)
-        menu = tk.OptionMenu(dialog, choice_var, *sorted(candidates))
+        if candidates:
+            menu = tk.OptionMenu(dialog, choice_var, *sorted(candidates))
+        else:
+            # OptionMenu requires at least one value; use placeholder until real list arrives
+            menu = tk.OptionMenu(dialog, choice_var, "")
         menu.config(width=28)
         menu.pack(pady=5)
 
