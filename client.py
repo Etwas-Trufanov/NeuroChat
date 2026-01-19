@@ -3,7 +3,8 @@ from tkinter import messagebox, scrolledtext
 try:
     import customtkinter as ctk
     USE_CTK = True
-    ctk.set_appearance_mode("Dark")
+    # Follow system theme dynamically
+    ctk.set_appearance_mode("System")
     ctk.set_default_color_theme("blue")
 except Exception:
     ctk = None
@@ -33,6 +34,8 @@ class ChatClient:
         self.root = root
         self.root.title("NeuroChat - Мессенджер")
         self.root.geometry("900x600")
+        # Apply theme-based menu colors early
+        self.apply_theme_to_root()
         
         self.server_socket = None
         self.username = None
@@ -71,6 +74,30 @@ class ChatClient:
                     self.display_current_chat()
             except Empty:
                 pass
+
+    def get_theme_colors(self):
+        # Returns (bg, fg, selectbg) for listbox/chat depending on theme
+        if USE_CTK:
+            mode = ctk.get_appearance_mode()
+            if mode == "Dark":
+                return ("#1f1f1f", "#ffffff", "#3a7bd5")
+            else:
+                return ("#ffffff", "#000000", "#82aaff")
+        else:
+            # Default tkinter light colors
+            return ("#ffffff", "#000000", "#cce6ff")
+
+    def apply_theme_to_root(self):
+        # Apply menu colors and other global settings based on current theme
+        try:
+            bg, fg, selbg = self.get_theme_colors()
+            # Menu colors
+            self.root.option_add("*Menu.background", bg)
+            self.root.option_add("*Menu.foreground", fg)
+            self.root.option_add("*Menu.activeBackground", selbg)
+            self.root.option_add("*Menu.activeForeground", fg)
+        except Exception:
+            pass
     
     def find_server(self):
         try:
@@ -127,11 +154,11 @@ class ChatClient:
         frame.pack(expand=True, padx=20, pady=20)
         LabelWidget(frame, text="NeuroChat", font=("Arial", 24, "bold")).pack(pady=20)
         LabelWidget(frame, text="Имя:").pack(anchor=tk.W)
-        username_entry = EntryWidget(frame, width=30)
-        username_entry.pack(pady=5)
+        username_entry = EntryWidget(frame)
+        username_entry.pack(pady=5, fill=tk.X)
         LabelWidget(frame, text="Пароль:").pack(anchor=tk.W)
-        password_entry = EntryWidget(frame, width=30, show="*")
-        password_entry.pack(pady=5)
+        password_entry = EntryWidget(frame, show="*")
+        password_entry.pack(pady=5, fill=tk.X)
         
         def perform_login(username, password):
             if not username or not password:
@@ -213,6 +240,8 @@ class ChatClient:
         self.clear_window()
         
         # МЕНЮ
+        # Re-apply theme for menus before creating them
+        self.apply_theme_to_root()
         menubar = tk.Menu(self.root)
         self.root.config(menu=menubar)
         
@@ -233,6 +262,12 @@ class ChatClient:
         self.chats_listbox = tk.Listbox(left_frame, height=30, width=30)
         self.chats_listbox.pack(pady=5, padx=5, fill=tk.BOTH, expand=True)
         self.chats_listbox.bind('<<ListboxSelect>>', self.on_chat_selected)
+        # Style listbox according to theme
+        bg, fg, selbg = self.get_theme_colors()
+        try:
+            self.chats_listbox.config(bg=bg, fg=fg, selectbackground=selbg)
+        except Exception:
+            pass
 
         right_frame = FrameWidget(main_frame)
         right_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=8, pady=8)
@@ -241,7 +276,9 @@ class ChatClient:
         self.chat_header.pack(pady=10)
 
         # Use TextWidget (CTkTextbox or ScrolledText)
-        self.chat_display = TextWidget(right_frame, height=12, width=60)
+        # Use ScrolledText for reliable behavior and style it
+        chat_bg, chat_fg, _ = self.get_theme_colors()
+        self.chat_display = scrolledtext.ScrolledText(right_frame, height=12, width=60, bg=chat_bg, fg=chat_fg, wrap=tk.WORD)
         try:
             # CTkTextbox doesn't support state via constructor
             self.chat_display.configure(state=tk.DISABLED)
@@ -255,7 +292,8 @@ class ChatClient:
         LabelWidget(input_frame, text="Сообщение:").pack(anchor=tk.W)
 
         # Многострочное поле ввода
-        self.message_entry = TextWidget(input_frame, height=4, width=60)
+        entry_bg, entry_fg, _ = self.get_theme_colors()
+        self.message_entry = scrolledtext.ScrolledText(input_frame, height=4, width=60, bg=entry_bg, fg=entry_fg, wrap=tk.WORD, insertbackground=entry_fg)
         self.message_entry.pack(side=tk.LEFT, pady=5, padx=(0, 5), fill=tk.BOTH, expand=True)
 
         # Кнопка отправить справа
