@@ -48,6 +48,7 @@ def handle_client(conn, addr, port):
     try:
         while True:
             data = conn.recv(1024).decode()
+            print(f"[SERVER RECV RAW] From {addr}: {data}")
             if not data:
                 break
             
@@ -55,7 +56,7 @@ def handle_client(conn, addr, port):
             action = message.get("action")
             
             # Регистрация
-            if action == "register":
+                if action == "register":
                 username = message.get("username")
                 password = message.get("password")
                 
@@ -63,7 +64,7 @@ def handle_client(conn, addr, port):
                     conn.send(json.dumps({"status": "error", "message": "Пользователь уже существует"}).encode())
                 else:
                     users[username] = password
-                    conn.send(json.dumps({"status": "success", "message": "Регистрация успешна"}).encode())
+                    conn.sendall(json.dumps({"status": "success", "message": "Регистрация успешна"}).encode())
                     print(f"[REGISTER] Зарегистрирован пользователь {username}")
             
             # Вход
@@ -77,7 +78,7 @@ def handle_client(conn, addr, port):
                     conn.send(json.dumps({"status": "error", "message": "Неверный пароль"}).encode())
                 else:
                     user_connections[username] = (conn, addr)
-                    conn.send(json.dumps({"status": "success", "message": "Вход успешен"}).encode())
+                    conn.sendall(json.dumps({"status": "success", "message": "Вход успешен"}).encode())
                     print(f"[LOGIN] Пользователь {username} вошел")
             
             # Отправка сообщения
@@ -107,7 +108,7 @@ def handle_client(conn, addr, port):
                     if recipient in user_connections:
                         try:
                             recipient_conn = user_connections[recipient][0]
-                            recipient_conn.send(json.dumps({
+                            recipient_conn.sendall(json.dumps({
                                 "action": "receive_message",
                                 "sender": sender,
                                 "text": text,
@@ -116,7 +117,7 @@ def handle_client(conn, addr, port):
                         except:
                             pass
                     
-                    conn.send(json.dumps({"status": "success", "message": "Сообщение отправлено"}).encode())
+                    conn.sendall(json.dumps({"status": "success", "message": "Сообщение отправлено"}).encode())
                     print(f"[MESSAGE] {sender} -> {recipient}: {text}")
             
             # Получение истории чата
@@ -125,7 +126,7 @@ def handle_client(conn, addr, port):
                 if other_user and other_user in users:
                     chat_key = tuple(sorted([username, other_user]))
                     history = chat_history.get(chat_key, [])
-                    conn.send(json.dumps({
+                    conn.sendall(json.dumps({
                         "action": "chat_history",
                         "other_user": other_user,
                         "messages": history
@@ -133,14 +134,14 @@ def handle_client(conn, addr, port):
                     print(f"[HISTORY] Отправлена история чата {chat_key}")
             
             # Получение списка пользователей
-            elif action == "get_users":
-                user_list = list(users.keys())
-                conn.send(json.dumps({
-                    "action": "users_list",
-                    "users": user_list
-                }).encode())
-                print(f"[USERS] Отправлен список пользователей клиенту {addr}")
-                print(f"[USERS] Отправлен список пользователей клиенту {addr}")
+            	elif action == "get_users":
+            		user_list = list(users.keys())
+            		conn.sendall(json.dumps({
+            		    "action": "users_list",
+            		    "users": user_list
+            		}).encode())
+            		print(f"[USERS] Отправлен список пользователей клиенту {addr}")
+            		print(f"[USERS] Отправлен список пользователей клиенту {addr}")
     
     except Exception as e:
         print(f"[ERROR] Ошибка клиента {addr}: {e}")
