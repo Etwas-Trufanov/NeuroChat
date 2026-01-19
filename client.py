@@ -356,8 +356,8 @@ class ChatClient:
     def receive_messages(self):
         while self.running and self.server_socket:
             try:
-                with self.socket_lock:
-                    data = self.server_socket.recv(1024).decode()
+                # БЕЗ блокировки - recv() сам по себе атомарный на уровне ОС
+                data = self.server_socket.recv(1024).decode()
                 if not data:
                     break
                 msg = json.loads(data)
