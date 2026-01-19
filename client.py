@@ -80,15 +80,24 @@ class ChatClient:
             return False
     
     def send_to_server(self, message):
+        print(f"[SEND_TO_QUEUE] Добавляю в очередь: {message}")
         self.send_queue.put(message)
+        print(f"[SEND_TO_QUEUE] Размер очереди: {self.send_queue.qsize()}")
     
     def sender_thread_worker(self):
+        print("[SENDER_THREAD] Поток отправки запущен")
         while self.running and self.server_socket:
             try:
                 message = self.send_queue.get(timeout=1)
-                self.server_socket.send(json.dumps(message).encode())
+                print(f"[SENDER_THREAD] Получил из очереди: {message}")
+                try:
+                    self.server_socket.send(json.dumps(message).encode())
+                    print(f"[SENDER_THREAD] Успешно отправлено: {message}")
+                except Exception as e:
+                    print(f"[SENDER_THREAD] Ошибка отправки: {e}")
             except Empty:
                 pass
+        print("[SENDER_THREAD] Поток отправки завершен")
     
     def create_login_screen(self):
         self.clear_window()
