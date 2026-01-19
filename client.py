@@ -225,6 +225,17 @@ class ChatClient:
         tk.Button(input_frame, text="Отправить", command=self.send_message, width=20, bg="#2196F3", fg="white").pack(pady=5)
     
     def add_new_chat(self):
+        # Запрашиваем свежий список пользователей синхронно перед открытием диалога
+        try:
+            print("[ADD_CHAT] Запрашиваю обновленный список пользователей")
+            self.server_socket.send(json.dumps({"action": "get_users"}).encode())
+            users_resp = self.server_socket.recv(1024).decode()
+            print(f"[ADD_CHAT] Получен обновленный список: {users_resp}")
+            with self.users_lock:
+                self.all_users = json.loads(users_resp).get("users", [])
+        except Exception as e:
+            print(f"[ADD_CHAT] Ошибка при запросе списка: {e}")
+        
         dialog = tk.Toplevel(self.root)
         dialog.title("Новый чат")
         dialog.geometry("300x120")
