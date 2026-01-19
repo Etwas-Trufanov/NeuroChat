@@ -128,6 +128,7 @@ def handle_client(conn, addr, port):
                     "action": "users_list",
                     "users": user_list
                 }).encode())
+                print(f"[USERS] Отправлен список пользователей клиенту {addr}")
     
     except Exception as e:
         print(f"[ERROR] Ошибка клиента {addr}: {e}")

@@ -15,6 +15,8 @@ class ChatClient:
         self.username = None
         self.server_host = None
         self.server_port = None
+        self.users_list = []
+        self.users_list_lock = threading.Lock()
         
         self.create_login_screen()
         
@@ -70,14 +72,15 @@ class ChatClient:
             messagebox.showerror("Ошибка подключения", str(e))
             return False
     
-    def send_to_server(self, message):
+    def send_to_server(self, message, wait_response=True):
         """Отправляет сообщение на сервер"""
         try:
             print(f"[CLIENT] Отправляю: {message}")
             self.server_socket.send(json.dumps(message).encode())
-            response = self.server_socket.recv(1024).decode()
-            print(f"[CLIENT] Получен ответ: {response}")
-            return response
+            if not wait_response:
+                return None
+            # Для get_users используем отдельную логику
+            return None
         except Exception as e:
             print(f"[CLIENT] Ошибка отправки: {e}")
             messagebox.showerror("Ошибка", f"Ошибка отправки: {e}")
@@ -204,18 +207,22 @@ class ChatClient:
     def show_users_list(self):
         """Показывает список пользователей"""
         try:
-            response = self.send_to_server({"action": "get_users"})
-            if response:
-                data = json.loads(response)
-                users = data.get("users", [])
-                # Убираем самого себя из списка
-                users = [u for u in users if u != self.username]
-                
-                if users:
-                    users_text = "\n".join(users)
-                    messagebox.showinfo("Пользователи онлайн", users_text)
-                else:
-                    messagebox.showinfo("Пользователи", "Других пользователей нет")
+            # Отправляем запрос в отдельном потоке
+            def request_users():
+                self.server_socket.send(json.dumps({"action": "get_users"}).encode())
+            
+            thread = threading.Thread(target=request_users, daemon=True)
+            thread.start()
+            
+            # Показываем текущий список (обновится через receive_messages)
+            with self.users_list_lock:
+                users = [u for u in self.users_list if u != self.username]
+            
+            if users:
+                users_text = "\n".join(users)
+                messagebox.showinfo("Пользователи", users_text)
+            else:
+                messagebox.showinfo("Пользователи", "Других пользователей нет")
         except Exception as e:
             messagebox.showerror("Ошибка", str(e))
     
@@ -229,19 +236,15 @@ class ChatClient:
             return
         
         try:
-            response = self.send_to_server({
+            self.server_socket.send(json.dumps({
                 "action": "send_message",
                 "recipient": recipient,
                 "text": text
-            })
+            }).encode())
             
-            if response:
-                data = json.loads(response)
-                if data.get("status") == "success":
-                    self.add_to_chat(f"[{datetime.now().strftime('%H:%M:%S')}] Вы -> {recipient}: {text}", "sent")
-                    self.message_entry.delete("1.0", tk.END)
-                else:
-                    messagebox.showerror("Ошибка", data.get("message", ""))
+            # Сразу показываем отправленное сообщение
+            self.add_to_chat(f"[{datetime.now().strftime('%H:%M:%S')}] Вы -> {recipient}: {text}", "sent")
+            self.message_entry.delete("1.0", tk.END)
         except Exception as e:
             messagebox.showerror("Ошибка отправки", str(e))
     
@@ -272,6 +275,11 @@ class ChatClient:
                     text = message.get("text")
                     timestamp = message.get("timestamp")
                     self.add_to_chat(f"[{timestamp}] {sender}: {text}", "received")
+                
+                elif message.get("action") == "users_list":
+                    users = message.get("users", [])
+                    with self.users_list_lock:
+                        self.users_list = users
             
             except Exception as e:
                 if self.running:
