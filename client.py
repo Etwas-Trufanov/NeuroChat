@@ -239,31 +239,71 @@ class ChatClient:
         dialog.geometry("300x150")
         dialog.transient(self.root)
         dialog.grab_set()
-        
-        tk.Label(dialog, text="Имя пользователя:").pack(pady=10)
-        username_entry = tk.Entry(dialog, width=30)
-        username_entry.pack(pady=5)
-        
-        def add_chat():
-            recipient = username_entry.get().strip()
-            if not recipient:
-                messagebox.showwarning("Внимание", "Введите имя пользователя!")
+
+        tk.Label(dialog, text="Выберите пользователя:").pack(pady=10)
+
+        # Запрашиваем актуальный список пользователей у сервера
+        self.request_chats_list()
+
+        choice_var = tk.StringVar(dialog)
+        choice_var.set("Загрузка...")
+
+        option_menu = tk.OptionMenu(dialog, choice_var, "Загрузка...")
+        option_menu.config(width=28)
+        option_menu.pack(pady=5)
+
+        info_label = tk.Label(dialog, text="(список обновится автоматически)")
+        info_label.pack(pady=(0, 5))
+
+        add_btn = tk.Button(dialog, text="Добавить", width=15)
+        add_btn.pack(pady=10)
+
+        # Обновление опций асинхронно (чтобы UI не зависал)
+        def update_options(attempts_left=25):
+            # Собираем кандидатов из self.chats (они наполняются receive_messages)
+            with self.chats_lock:
+                candidates = [u for u in self.chats.keys() if u != self.username]
+
+            # Исключаем уже добавленные (если уже есть чат, можно выбрать его тоже)
+            if candidates:
+                menu = option_menu['menu']
+                menu.delete(0, 'end')
+                for user in sorted(candidates):
+                    menu.add_command(label=user, command=lambda v=user: choice_var.set(v))
+                choice_var.set(sorted(candidates)[0])
+                add_btn.config(state=tk.NORMAL)
+            else:
+                # Пока нет данных — пробуем через 200ms
+                if attempts_left > 0:
+                    dialog.after(200, lambda: update_options(attempts_left-1))
+                else:
+                    # Ничего не найдено
+                    menu = option_menu['menu']
+                    menu.delete(0, 'end')
+                    menu.add_command(label='Нет доступных пользователей', command=lambda: None)
+                    choice_var.set('Нет доступных пользователей')
+                    add_btn.config(state=tk.DISABLED)
+
+        def add_chat_from_choice():
+            recipient = choice_var.get()
+            if not recipient or recipient in ("Загрузка...", 'Нет доступных пользователей'):
+                messagebox.showwarning("Внимание", "Выберите пользователя из списка!")
                 return
-            
             if recipient == self.username:
                 messagebox.showwarning("Внимание", "Нельзя написать самому себе!")
                 return
-            
             with self.chats_lock:
                 if recipient not in self.chats:
                     self.chats[recipient] = []
-                    self.update_chats_listbox()
-                    self.current_chat = recipient
-                    self.on_chat_selected(None)
-            
+                self.current_chat = recipient
+                self.update_chats_listbox()
             dialog.destroy()
-        
-        tk.Button(dialog, text="Добавить", command=add_chat, width=15).pack(pady=10)
+
+        add_btn.config(command=add_chat_from_choice)
+        add_btn.config(state=tk.DISABLED)
+
+        # Запускаем цикл обновления опций
+        update_options()
     
     def on_chat_selected(self, event):
         """При выборе чата из списка"""
