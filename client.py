@@ -42,6 +42,8 @@ class ChatClient:
         self.root.geometry("900x600")
         # Apply theme-based menu colors early
         self.apply_theme_to_root()
+        # External login hook for MVC controller integration
+        self.external_login_handler = None
         
         self.server_socket = None
         self.username = None
@@ -272,6 +274,13 @@ class ChatClient:
         def perform_login(username, password):
             if not username or not password:
                 messagebox.showwarning("Внимание", "Заполните все поля!")
+                return
+            # If an external login handler is provided (MVC controller), delegate
+            if hasattr(self, 'external_login_handler') and self.external_login_handler:
+                try:
+                    self.external_login_handler(username, password)
+                except Exception as e:
+                    messagebox.showerror("Ошибка", str(e))
                 return
             if not self.connect_to_server():
                 return
@@ -655,9 +664,15 @@ class ChatClient:
             w.destroy()
 
 if __name__ == "__main__":
-    if USE_CTK:
-        root = ctk.CTk()
-    else:
-        root = tk.Tk()
-    app = ChatClient(root)
-    root.mainloop()
+    # Backwards-compatible entrypoint: run controller that composes model+view
+    try:
+        from client_controller import ChatController
+        ChatController().run()
+    except Exception:
+        # Fallback: run the legacy UI directly
+        if USE_CTK:
+            root = ctk.CTk()
+        else:
+            root = tk.Tk()
+        app = ChatClient(root)
+        root.mainloop()
