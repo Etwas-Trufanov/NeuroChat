@@ -234,16 +234,15 @@ class ChatClient:
     
     def add_new_chat(self):
         """Диалог для добавления нового чата"""
+        # Запрашиваем актуальный список пользователей у сервера ДО создания диалога
+        self.request_chats_list()
+        
         dialog = tk.Toplevel(self.root)
         dialog.title("Новый чат")
         dialog.geometry("300x150")
         dialog.transient(self.root)
-        dialog.grab_set()
 
         tk.Label(dialog, text="Выберите пользователя:").pack(pady=10)
-
-        # Запрашиваем актуальный список пользователей у сервера
-        self.request_chats_list()
 
         choice_var = tk.StringVar(dialog)
         choice_var.set("Загрузка...")
