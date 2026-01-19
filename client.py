@@ -18,6 +18,8 @@ class ChatClient:
         self.current_chat = None  # Текущий активный чат
         self.chats = {}  # {username: [messages]}
         self.chats_lock = threading.Lock()
+        self.all_users = []  # Полный список пользователей на сервере
+        self.users_lock = threading.Lock()
         
         self.create_login_screen()
         
@@ -124,7 +126,7 @@ class ChatClient:
                     self.username = username
                     self.create_chat_screen()
                     self.start_receive_thread()
-                    self.request_chats_list()
+                    self.load_all_users()
                 else:
                     messagebox.showerror("Ошибка входа", data.get("message", "Неизвестная ошибка"))
         
@@ -232,11 +234,19 @@ class ChatClient:
         thread = threading.Thread(target=request_users, daemon=True)
         thread.start()
     
+    def load_all_users(self):
+        """Загружает список всех пользователей один раз при входе"""
+        def request_users():
+            try:
+                self.server_socket.send(json.dumps({"action": "get_users"}).encode())
+            except:
+                pass
+        
+        thread = threading.Thread(target=request_users, daemon=True)
+        thread.start()
+    
     def add_new_chat(self):
         """Диалог для добавления нового чата"""
-        # Запрашиваем актуальный список пользователей у сервера ДО создания диалога
-        self.request_chats_list()
-        
         dialog = tk.Toplevel(self.root)
         dialog.title("Новый чат")
         dialog.geometry("300x150")
@@ -251,19 +261,14 @@ class ChatClient:
         option_menu.config(width=28)
         option_menu.pack(pady=5)
 
-        info_label = tk.Label(dialog, text="(список обновится автоматически)")
-        info_label.pack(pady=(0, 5))
-
         add_btn = tk.Button(dialog, text="Добавить", width=15)
         add_btn.pack(pady=10)
 
-        # Обновление опций асинхронно (чтобы UI не зависал)
-        def update_options(attempts_left=25):
-            # Собираем кандидатов из self.chats (они наполняются receive_messages)
-            with self.chats_lock:
-                candidates = [u for u in self.chats.keys() if u != self.username]
+        # Обновление опций на основе self.all_users (загруженного при входе)
+        def update_options(attempts_left=15):
+            with self.users_lock:
+                candidates = [u for u in self.all_users if u != self.username]
 
-            # Исключаем уже добавленные (если уже есть чат, можно выбрать его тоже)
             if candidates:
                 menu = option_menu['menu']
                 menu.delete(0, 'end')
@@ -272,9 +277,9 @@ class ChatClient:
                 choice_var.set(sorted(candidates)[0])
                 add_btn.config(state=tk.NORMAL)
             else:
-                # Пока нет данных — пробуем через 200ms
+                # Пока нет данных — пробуем через 300ms
                 if attempts_left > 0:
-                    dialog.after(200, lambda: update_options(attempts_left-1))
+                    dialog.after(300, lambda: update_options(attempts_left-1))
                 else:
                     # Ничего не найдено
                     menu = option_menu['menu']
@@ -433,6 +438,8 @@ class ChatClient:
                 
                 elif message.get("action") == "users_list":
                     users = message.get("users", [])
+                    with self.users_lock:
+                        self.all_users = users
                     with self.chats_lock:
                         for user in users:
                             if user != self.username and user not in self.chats:
