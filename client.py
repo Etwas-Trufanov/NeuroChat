@@ -118,19 +118,28 @@ class ChatClient:
             if not self.connect_to_server():
                 return
             try:
+                print(f"[LOGIN] Отправляю login для {username}")
                 self.server_socket.send(json.dumps({
                     "action": "login",
                     "username": username,
                     "password": password
                 }).encode())
                 response = self.server_socket.recv(1024).decode()
+                print(f"[LOGIN] Получен response: {response}")
                 data = json.loads(response)
                 if data.get("status") == "success":
                     self.username = username
+                    print(f"[LOGIN] Логин успешен, запрашиваю список пользователей")
+                    
                     self.server_socket.send(json.dumps({"action": "get_users"}).encode())
+                    print(f"[LOGIN] Отправлен get_users запрос, жду ответ...")
                     users_resp = self.server_socket.recv(1024).decode()
+                    print(f"[LOGIN] Получен users response: {users_resp}")
+                    
                     with self.users_lock:
                         self.all_users = json.loads(users_resp).get("users", [])
+                    
+                    print(f"[LOGIN] Загруженные пользователи: {self.all_users}")
                     self.create_chat_screen()
                     self.start_receive_thread()
                     self.start_sender_thread()
@@ -139,6 +148,9 @@ class ChatClient:
                     self.server_socket.close()
                     self.server_socket = None
             except Exception as e:
+                print(f"[LOGIN] Ошибка: {e}")
+                import traceback
+                traceback.print_exc()
                 messagebox.showerror("Ошибка", str(e))
         
         def login():
