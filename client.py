@@ -31,7 +31,6 @@ class ChatClient:
         self.running = True
         
         self.send_queue = Queue()
-        self.socket_lock = threading.Lock()  # Блокировка для синхронного доступа к сокету
         
         self.create_login_screen()
         self.start_ui_update_thread()
@@ -120,23 +119,21 @@ class ChatClient:
                 return
             try:
                 print(f"[LOGIN] Отправляю login для {username}")
-                with self.socket_lock:
-                    self.server_socket.send(json.dumps({
-                        "action": "login",
-                        "username": username,
-                        "password": password
-                    }).encode())
-                    response = self.server_socket.recv(1024).decode()
+                self.server_socket.send(json.dumps({
+                    "action": "login",
+                    "username": username,
+                    "password": password
+                }).encode())
+                response = self.server_socket.recv(1024).decode()
                 print(f"[LOGIN] Получен response: {response}")
                 data = json.loads(response)
                 if data.get("status") == "success":
                     self.username = username
                     print(f"[LOGIN] Логин успешен, запрашиваю список пользователей")
                     
-                    with self.socket_lock:
-                        self.server_socket.send(json.dumps({"action": "get_users"}).encode())
-                        print(f"[LOGIN] Отправлен get_users запрос, жду ответ...")
-                        users_resp = self.server_socket.recv(1024).decode()
+                    self.server_socket.send(json.dumps({"action": "get_users"}).encode())
+                    print(f"[LOGIN] Отправлен get_users запрос, жду ответ...")
+                    users_resp = self.server_socket.recv(1024).decode()
                     print(f"[LOGIN] Получен users response: {users_resp}")
                     
                     with self.users_lock:
@@ -251,17 +248,9 @@ class ChatClient:
             return "break"  # Отменить стандартное поведение Enter
     
     def add_new_chat(self):
-        # Запрашиваем свежий список пользователей синхронно перед открытием диалога
-        try:
-            print("[ADD_CHAT] Запрашиваю обновленный список пользователей")
-            with self.socket_lock:
-                self.server_socket.send(json.dumps({"action": "get_users"}).encode())
-                users_resp = self.server_socket.recv(1024).decode()
-            print(f"[ADD_CHAT] Получен обновленный список: {users_resp}")
-            with self.users_lock:
-                self.all_users = json.loads(users_resp).get("users", [])
-        except Exception as e:
-            print(f"[ADD_CHAT] Ошибка при запросе списка: {e}")
+        # Отправляем запрос асинхронно, не блокируя основной поток
+        print("[ADD_CHAT] Запрашиваю обновленный список пользователей асинхронно")
+        self.send_to_server({"action": "get_users"})
         
         dialog = tk.Toplevel(self.root)
         dialog.title("Новый чат")
