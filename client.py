@@ -72,15 +72,17 @@ class ChatClient:
             messagebox.showerror("Ошибка подключения", str(e))
             return False
     
-    def send_to_server(self, message, wait_response=True):
+    def send_to_server(self, message, wait_response=False):
         """Отправляет сообщение на сервер"""
         try:
             print(f"[CLIENT] Отправляю: {message}")
             self.server_socket.send(json.dumps(message).encode())
             if not wait_response:
                 return None
-            # Для get_users используем отдельную логику
-            return None
+            # Для login/register ждем ответ с блокировкой сокета
+            response = self.server_socket.recv(1024).decode()
+            print(f"[CLIENT] Получен ответ: {response}")
+            return response
         except Exception as e:
             print(f"[CLIENT] Ошибка отправки: {e}")
             messagebox.showerror("Ошибка", f"Ошибка отправки: {e}")
@@ -116,7 +118,7 @@ class ChatClient:
                 "action": "login",
                 "username": username,
                 "password": password
-            })
+            }, wait_response=True)
             
             if response:
                 data = json.loads(response)
@@ -147,7 +149,7 @@ class ChatClient:
                 "action": "register",
                 "username": username,
                 "password": password
-            })
+            }, wait_response=True)
             
             if response:
                 data = json.loads(response)
