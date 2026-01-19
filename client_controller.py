@@ -12,16 +12,61 @@ class ChatController:
         self.model = ChatModel()
         self.view = ChatView()
 
-        # Wire model to view
+        # Wire model to view and preserve view handlers by wrapping them
         try:
+            # Let the view register its callbacks first
             self.view.set_model(self.model)
-        except Exception:
-            pass
+            # Keep references to view-registered handlers (if any)
+            view_on_receive = getattr(self.model, 'on_receive', None)
+            view_on_users = getattr(self.model, 'on_users', None)
+            view_on_history = getattr(self.model, 'on_history', None)
 
-        # Wire model callbacks to controller handlers
-        self.model.on_receive = self._on_model_receive
-        self.model.on_users = self._on_model_users
-        self.model.on_history = self._on_model_history
+            # Define wrappers that call the view handler first, then controller handler
+            def wrapped_on_receive(msg):
+                try:
+                    if view_on_receive:
+                        view_on_receive(msg)
+                except Exception:
+                    pass
+                try:
+                    self._on_model_receive(msg)
+                except Exception:
+                    pass
+
+            def wrapped_on_users(users):
+                try:
+                    if view_on_users:
+                        view_on_users(users)
+                except Exception:
+                    pass
+                try:
+                    self._on_model_users(users)
+                except Exception:
+                    pass
+
+            def wrapped_on_history(other_user, messages):
+                try:
+                    if view_on_history:
+                        view_on_history(other_user, messages)
+                except Exception:
+                    pass
+                try:
+                    self._on_model_history(other_user, messages)
+                except Exception:
+                    pass
+
+            # Install the wrapped handlers on the model
+            self.model.on_receive = wrapped_on_receive
+            self.model.on_users = wrapped_on_users
+            self.model.on_history = wrapped_on_history
+        except Exception:
+            # Fallback: ensure controller handlers are present
+            try:
+                self.model.on_receive = self._on_model_receive
+                self.model.on_users = self._on_model_users
+                self.model.on_history = self._on_model_history
+            except Exception:
+                pass
 
     def run(self):
         # Expose a login handler so UI delegates login to model
