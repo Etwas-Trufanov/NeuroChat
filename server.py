@@ -56,12 +56,12 @@ def handle_client(conn, addr, port):
             action = message.get("action")
             
             # Регистрация
-                if action == "register":
+            if action == "register":
                 username = message.get("username")
                 password = message.get("password")
-                
+
                 if username in users:
-                    conn.send(json.dumps({"status": "error", "message": "Пользователь уже существует"}).encode())
+                    conn.sendall(json.dumps({"status": "error", "message": "Пользователь уже существует"}).encode())
                 else:
                     users[username] = password
                     conn.sendall(json.dumps({"status": "success", "message": "Регистрация успешна"}).encode())
@@ -134,14 +134,13 @@ def handle_client(conn, addr, port):
                     print(f"[HISTORY] Отправлена история чата {chat_key}")
             
             # Получение списка пользователей
-            	elif action == "get_users":
-            		user_list = list(users.keys())
-            		conn.sendall(json.dumps({
-            		    "action": "users_list",
-            		    "users": user_list
-            		}).encode())
-            		print(f"[USERS] Отправлен список пользователей клиенту {addr}")
-            		print(f"[USERS] Отправлен список пользователей клиенту {addr}")
+            elif action == "get_users":
+                user_list = list(users.keys())
+                conn.sendall(json.dumps({
+                    "action": "users_list",
+                    "users": user_list
+                }).encode())
+                print(f"[USERS] Отправлен список пользователей клиенту {addr}")
     
     except Exception as e:
         print(f"[ERROR] Ошибка клиента {addr}: {e}")
