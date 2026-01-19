@@ -146,6 +146,28 @@ class ChatModel:
                 users_resp = self.server_socket.recv(4096).decode()
                 users_data = json.loads(users_resp)
                 self.all_users = users_data.get('users', [])
+                # request list of chats (users with whom we have history)
+                try:
+                    self.server_socket.sendall(json.dumps({'action': 'get_my_chats'}).encode())
+                    mych_resp = self.server_socket.recv(4096).decode()
+                    mych_data = json.loads(mych_resp)
+                    chats = mych_data.get('chats', [])
+                    # initialize chat buckets and request history for each partner
+                    for other in chats:
+                        try:
+                            self.server_socket.sendall(json.dumps({'action': 'get_chat_history', 'other_user': other}).encode())
+                            hist_resp = self.server_socket.recv(8192).decode()
+                            hist_data = json.loads(hist_resp)
+                            hist = hist_data.get('messages', [])
+                            self.chats[other] = hist
+                            if self.on_history:
+                                self.on_history(other, hist)
+                        except Exception:
+                            # continue with next partner if any error
+                            continue
+                except Exception:
+                    pass
+
                 # start sender/receiver threads
                 self.start()
             return data

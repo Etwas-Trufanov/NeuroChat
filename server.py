@@ -141,6 +141,24 @@ def handle_client(conn, addr, port):
                     "users": user_list
                 }).encode())
                 print(f"[USERS] Отправлен список пользователей клиенту {addr}")
+            # Получение списка чатов, где есть переписка с этим пользователем
+            elif action == "get_my_chats":
+                # соберём список собеседников, с которыми у username есть история
+                chats_for_user = []
+                try:
+                    for chat_key, msgs in chat_history.items():
+                        if not msgs:
+                            continue
+                        if username in chat_key:
+                            other = chat_key[1] if chat_key[0] == username else chat_key[0]
+                            chats_for_user.append(other)
+                except Exception:
+                    chats_for_user = []
+                conn.sendall(json.dumps({
+                    "action": "my_chats",
+                    "chats": chats_for_user
+                }).encode())
+                print(f"[MY_CHATS] Отправлен список чатов для {username}: {chats_for_user}")
     
     except Exception as e:
         print(f"[ERROR] Ошибка клиента {addr}: {e}")

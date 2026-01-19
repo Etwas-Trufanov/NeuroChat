@@ -306,6 +306,27 @@ class ChatClient:
                     with self.users_lock:
                         self.all_users = json.loads(users_resp).get("users", [])
                     
+                    # Запросить список чатов, где есть переписка, и загрузить их историю
+                    try:
+                        self.server_socket.send(json.dumps({"action": "get_my_chats"}).encode())
+                        mych_resp = self.server_socket.recv(4096).decode()
+                        mych_data = json.loads(mych_resp)
+                        chats = mych_data.get('chats', [])
+                        for other in chats:
+                            try:
+                                self.server_socket.send(json.dumps({"action": "get_chat_history", "other_user": other}).encode())
+                                hist_resp = self.server_socket.recv(8192).decode()
+                                hist_data = json.loads(hist_resp)
+                                hist = hist_data.get('messages', [])
+                                with self.chats_lock:
+                                    self.chats[other] = hist
+                                if self.current_chat == other:
+                                    self.event_queue.put(("display_chat", None))
+                            except Exception:
+                                continue
+                    except Exception:
+                        pass
+
                     print(f"[LOGIN] Загруженные пользователи: {self.all_users}")
                     self.create_chat_screen()
                     self.start_receive_thread()
