@@ -260,18 +260,49 @@ class ChatClient:
         tk.Label(dialog, text="Выберите пользователя:").pack(pady=10)
         
         choice_var = tk.StringVar(dialog)
-        with self.users_lock:
-            candidates = [u for u in self.all_users if u != self.username]
-        
+        # Формируем список кандидатов из кэша; если пусто — обновляем диалог, как только придёт ответ
+        def get_candidates():
+            with self.users_lock:
+                return [u for u in self.all_users if u != self.username]
+
+        candidates = get_candidates()
+
+        status_label = None
+        add_btn_state = tk.NORMAL
+
         if not candidates:
-            tk.Label(dialog, text="Нет пользователей").pack()
-            tk.Button(dialog, text="Закрыть", command=dialog.destroy).pack()
-            return
-        
-        choice_var.set(candidates[0])
+            status_label = tk.Label(dialog, text="Обновление списка пользователей...")
+            status_label.pack()
+            add_btn_state = tk.DISABLED
+
+        choice_initial = candidates[0] if candidates else ""
+        choice_var.set(choice_initial)
         menu = tk.OptionMenu(dialog, choice_var, *sorted(candidates))
         menu.config(width=28)
         menu.pack(pady=5)
+
+        # Функция, периодически проверяющая кеш пользователей и обновляющую меню
+        def refresh_candidates(retries=10, delay=200):
+            nonlocal menu, status_label, add_btn_state
+            candidates = get_candidates()
+            if candidates:
+                # Пересоздаём меню с новыми опциями
+                menu.destroy()
+                choice_var.set(sorted(candidates)[0])
+                menu = tk.OptionMenu(dialog, choice_var, *sorted(candidates))
+                menu.config(width=28)
+                menu.pack(pady=5)
+                if status_label:
+                    status_label.destroy()
+                add_button.config(state=tk.NORMAL)
+                return
+            if retries > 0:
+                dialog.after(delay, lambda: refresh_candidates(retries-1, delay))
+            else:
+                # Ничего не пришло — показываем сообщение
+                if status_label:
+                    status_label.config(text="Нет пользователей")
+                add_button.config(state=tk.DISABLED)
         
         def add_chat():
             recipient = choice_var.get()
@@ -286,7 +317,12 @@ class ChatClient:
             self.display_current_chat()
             self.send_to_server({"action": "get_chat_history", "other_user": recipient})
         
-        tk.Button(dialog, text="Добавить", command=add_chat, width=15).pack(pady=10)
+        add_button = tk.Button(dialog, text="Добавить", command=add_chat, width=15, state=add_btn_state)
+        add_button.pack(pady=10)
+
+        # Если изначально нет кандидатов — запускаем цикл обновления меню
+        if not candidates:
+            dialog.after(200, refresh_candidates)
     
     def on_chat_selected(self, event):
         selection = self.chats_listbox.curselection()
@@ -371,6 +407,13 @@ class ChatClient:
                         self.chats[other] = hist
                         if self.current_chat == other:
                             self.event_queue.put(("display_chat", None))
+                elif msg.get("action") == "users_list":
+                    users = msg.get("users", [])
+                    with self.users_lock:
+                        self.all_users = users
+                    print(f"[RECEIVE] Обновлён список пользователей: {self.all_users}")
+                    # UI dialogs check the cache periodically; also signal update if needed
+                    self.event_queue.put(("update_chats_list", None))
             except Exception as e:
                 if self.running:
                     print(f"[RECEIVE] {e}")
