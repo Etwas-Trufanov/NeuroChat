@@ -189,6 +189,15 @@ class ChatClient:
     
     def create_chat_screen(self):
         self.clear_window()
+        
+        # МЕНЮ
+        menubar = tk.Menu(self.root)
+        self.root.config(menu=menubar)
+        
+        file_menu = tk.Menu(menubar, tearoff=0)
+        menubar.add_cascade(label="Файл", menu=file_menu)
+        file_menu.add_command(label="Выход", command=self.logout)
+        
         main_frame = tk.Frame(self.root)
         main_frame.pack(fill=tk.BOTH, expand=True)
         
@@ -203,8 +212,6 @@ class ChatClient:
         self.chats_listbox.pack(pady=5, padx=5, fill=tk.BOTH, expand=True)
         self.chats_listbox.bind('<<ListboxSelect>>', self.on_chat_selected)
         
-        tk.Button(left_frame, text="Выход", command=self.logout, width=20, bg="#f44336", fg="white").pack(pady=5)
-        
         right_frame = tk.Frame(main_frame)
         right_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=5, pady=5)
         
@@ -215,14 +222,30 @@ class ChatClient:
         self.chat_display.pack(padx=5, pady=5, fill=tk.BOTH, expand=True)
         
         input_frame = tk.Frame(right_frame)
-        input_frame.pack(padx=5, pady=5, fill=tk.X)
+        input_frame.pack(padx=5, pady=5, fill=tk.BOTH, expand=True)
         
         tk.Label(input_frame, text="Сообщение:").pack(anchor=tk.W)
-        self.message_entry = tk.Entry(input_frame, width=60)
-        self.message_entry.pack(pady=5, fill=tk.X)
-        self.message_entry.bind('<Return>', lambda e: self.send_message())
         
-        tk.Button(input_frame, text="Отправить", command=self.send_message, width=20, bg="#2196F3", fg="white").pack(pady=5)
+        # Многострочное поле ввода
+        self.message_entry = scrolledtext.ScrolledText(input_frame, height=4, width=60, wrap=tk.WORD)
+        self.message_entry.pack(side=tk.LEFT, pady=5, padx=(0, 5), fill=tk.BOTH, expand=True)
+        
+        # Кнопка отправить справа
+        send_btn = tk.Button(input_frame, text="Отправить", command=self.send_message, width=10, bg="#2196F3", fg="white")
+        send_btn.pack(side=tk.LEFT, padx=5)
+        
+        # Bind Enter и Shift+Enter
+        self.message_entry.bind('<Return>', self.on_message_key)
+    
+    def on_message_key(self, event):
+        """Обработка Enter/Shift+Enter в поле ввода"""
+        if event.state & 0x1:  # Shift нажат
+            # Разрешаем новую строку
+            return "break"  # Не обрабатывать дальше, но вставить символ
+        else:
+            # Enter без Shift - отправить
+            self.send_message()
+            return "break"  # Отменить стандартное поведение Enter
     
     def add_new_chat(self):
         # Запрашиваем свежий список пользователей синхронно перед открытием диалога
@@ -300,7 +323,7 @@ class ChatClient:
         if not self.current_chat:
             messagebox.showwarning("Внимание", "Выберите чат!")
             return
-        text = self.message_entry.get().strip()
+        text = self.message_entry.get("1.0", tk.END).strip()
         if not text:
             return
         self.send_to_server({"action": "send_message", "recipient": self.current_chat, "text": text})
@@ -310,7 +333,7 @@ class ChatClient:
                 self.chats[self.current_chat] = []
             self.chats[self.current_chat].append(msg)
         self.display_current_chat()
-        self.message_entry.delete(0, tk.END)
+        self.message_entry.delete("1.0", tk.END)
     
     def update_chats_listbox(self):
         self.chats_listbox.delete(0, tk.END)
