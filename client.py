@@ -236,82 +236,52 @@ class ChatClient:
         
         # Bind Enter и Shift+Enter
         self.message_entry.bind('<Return>', self.on_message_key)
+        self.message_entry.bind('<Shift-Return>', self.insert_newline)
     
     def on_message_key(self, event):
         """Обработка Enter/Shift+Enter в поле ввода"""
-        if event.state & 0x1:  # Shift нажат
-            # Разрешаем новую строку
-            return "break"  # Не обрабатывать дальше, но вставить символ
-        else:
-            # Enter без Shift - отправить
-            self.send_message()
-            return "break"  # Отменить стандартное поведение Enter
+        # Enter без Shift - отправить
+        self.send_message()
+        return "break"  # Отменить стандартное поведение Enter
+
+    def insert_newline(self, event):
+        # Вставляем перенос строки при Shift+Enter
+        self.message_entry.insert(tk.INSERT, "\n")
+        return "break"
     
     def add_new_chat(self):
         # Отправляем запрос асинхронно, не блокируя основной поток
         print("[ADD_CHAT] Запрашиваю обновленный список пользователей асинхронно")
         self.send_to_server({"action": "get_users"})
-        
         dialog = tk.Toplevel(self.root)
         dialog.title("Новый чат")
-        dialog.geometry("300x120")
+        dialog.geometry("320x360")
         dialog.transient(self.root)
-        
-        tk.Label(dialog, text="Выберите пользователя:").pack(pady=10)
-        
-        choice_var = tk.StringVar(dialog)
-        # Формируем список кандидатов из кэша; если пусто — обновляем диалог, как только придёт ответ
-        def get_candidates():
+
+        tk.Label(dialog, text="Выберите пользователя:").pack(pady=6)
+
+        # Список с прокруткой — помещается в диалог лучше, чем OptionMenu
+        list_frame = tk.Frame(dialog)
+        list_frame.pack(fill=tk.BOTH, expand=True, padx=8, pady=4)
+        list_scroll = tk.Scrollbar(list_frame)
+        list_scroll.pack(side=tk.RIGHT, fill=tk.Y)
+        users_listbox = tk.Listbox(list_frame, yscrollcommand=list_scroll.set, selectmode=tk.SINGLE)
+        users_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        list_scroll.config(command=users_listbox.yview)
+
+        def populate_listbox():
+            users_listbox.delete(0, tk.END)
             with self.users_lock:
-                return [u for u in self.all_users if u != self.username]
+                candidates = [u for u in self.all_users if u != self.username]
+            for u in sorted(candidates):
+                users_listbox.insert(tk.END, u)
+            return len(candidates) > 0
 
-        candidates = get_candidates()
-
-        status_label = None
-        add_btn_state = tk.NORMAL
-
-        if not candidates:
-            status_label = tk.Label(dialog, text="Обновление списка пользователей...")
-            status_label.pack()
-            add_btn_state = tk.DISABLED
-
-        choice_initial = candidates[0] if candidates else ""
-        choice_var.set(choice_initial)
-        if candidates:
-            menu = tk.OptionMenu(dialog, choice_var, *sorted(candidates))
-        else:
-            # OptionMenu requires at least one value; use placeholder until real list arrives
-            menu = tk.OptionMenu(dialog, choice_var, "")
-        menu.config(width=28)
-        menu.pack(pady=5)
-
-        # Функция, периодически проверяющая кеш пользователей и обновляющую меню
-        def refresh_candidates(retries=10, delay=200):
-            nonlocal menu, status_label, add_btn_state
-            candidates = get_candidates()
-            if candidates:
-                # Пересоздаём меню с новыми опциями
-                menu.destroy()
-                choice_var.set(sorted(candidates)[0])
-                menu = tk.OptionMenu(dialog, choice_var, *sorted(candidates))
-                menu.config(width=28)
-                menu.pack(pady=5)
-                if status_label:
-                    status_label.destroy()
-                add_button.config(state=tk.NORMAL)
+        def add_chat_from_selection(event=None):
+            sel = users_listbox.curselection()
+            if not sel:
                 return
-            if retries > 0:
-                dialog.after(delay, lambda: refresh_candidates(retries-1, delay))
-            else:
-                # Ничего не пришло — показываем сообщение
-                if status_label:
-                    status_label.config(text="Нет пользователей")
-                add_button.config(state=tk.DISABLED)
-        
-        def add_chat():
-            recipient = choice_var.get()
-            if not recipient:
-                return
+            recipient = users_listbox.get(sel[0])
             dialog.destroy()
             with self.chats_lock:
                 if recipient not in self.chats:
@@ -320,13 +290,28 @@ class ChatClient:
             self.update_chats_listbox()
             self.display_current_chat()
             self.send_to_server({"action": "get_chat_history", "other_user": recipient})
-        
-        add_button = tk.Button(dialog, text="Добавить", command=add_chat, width=15, state=add_btn_state)
-        add_button.pack(pady=10)
 
-        # Если изначально нет кандидатов — запускаем цикл обновления меню
-        if not candidates:
-            dialog.after(200, refresh_candidates)
+        users_listbox.bind('<Double-Button-1>', add_chat_from_selection)
+
+        add_button = tk.Button(dialog, text="Добавить", command=add_chat_from_selection, width=15)
+        add_button.pack(pady=8)
+
+        # Периодически обновляем список из кеша (и запрос уже отправлен выше)
+        def refresh_until_found(retries=20, delay=200):
+            present = populate_listbox()
+            if present:
+                add_button.config(state=tk.NORMAL)
+                return
+            else:
+                add_button.config(state=tk.DISABLED)
+            if retries > 0:
+                dialog.after(delay, lambda: refresh_until_found(retries-1, delay))
+            else:
+                add_button.config(state=tk.DISABLED)
+
+        # Инициализация
+        populate_listbox()
+        dialog.after(150, refresh_until_found)
     
     def on_chat_selected(self, event):
         selection = self.chats_listbox.curselection()
