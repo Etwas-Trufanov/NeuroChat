@@ -602,7 +602,10 @@ class ChatClient:
                     with self.chats_lock:
                         if sender not in self.chats:
                             self.chats[sender] = []
-                        self.chats[sender].append(msg_data)
+                        # dedupe: avoid inserting exact duplicate of last message
+                        last = self.chats[sender][-1] if self.chats[sender] else None
+                        if not last or not (last.get('sender') == msg_data.get('sender') and last.get('text') == msg_data.get('text') and last.get('timestamp') == msg_data.get('timestamp')):
+                            self.chats[sender].append(msg_data)
                     # Mark unread if not viewing this chat or app not focused
                     focused = (self.root.focus_displayof() is not None)
                     minimized = False

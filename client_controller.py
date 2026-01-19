@@ -86,6 +86,17 @@ class ChatController:
                         self.view.ui.create_chat_screen()
                     except Exception:
                         pass
+                    # Request chat history for known users (helps restore chats after reconnect)
+                    try:
+                        # avoid spamming large lists; request for users except self
+                        for u in list(self.model.all_users):
+                            if u and u != username:
+                                try:
+                                    self.model.send_to_server({"action": "get_chat_history", "other_user": u})
+                                except Exception:
+                                    pass
+                    except Exception:
+                        pass
                 else:
                     # show error via messagebox in UI thread
                     try:

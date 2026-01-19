@@ -51,7 +51,10 @@ class ChatView:
                 with self.ui.chats_lock:
                     if sender not in self.ui.chats:
                         self.ui.chats[sender] = []
-                    self.ui.chats[sender].append(m)
+                    # simple dedupe: skip if identical to last message
+                    last = self.ui.chats[sender][-1] if self.ui.chats[sender] else None
+                    if not last or not (last.get('sender') == m.get('sender') and last.get('text') == m.get('text') and last.get('timestamp') == m.get('timestamp')):
+                        self.ui.chats[sender].append(m)
             except Exception:
                 pass
             # mark unread unless current chat
