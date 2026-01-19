@@ -1,5 +1,27 @@
 import tkinter as tk
 from tkinter import messagebox, scrolledtext
+try:
+    import customtkinter as ctk
+    USE_CTK = True
+    ctk.set_appearance_mode("Dark")
+    ctk.set_default_color_theme("blue")
+except Exception:
+    ctk = None
+    USE_CTK = False
+
+# Widget aliases: prefer customtkinter widgets when available, fallback to tkinter
+if USE_CTK:
+    FrameWidget = ctk.CTkFrame
+    LabelWidget = ctk.CTkLabel
+    ButtonWidget = ctk.CTkButton
+    EntryWidget = ctk.CTkEntry
+    TextWidget = ctk.CTkTextbox
+else:
+    FrameWidget = tk.Frame
+    LabelWidget = tk.Label
+    ButtonWidget = tk.Button
+    EntryWidget = tk.Entry
+    TextWidget = scrolledtext.ScrolledText
 import socket
 import threading
 import json
@@ -101,14 +123,14 @@ class ChatClient:
     
     def create_login_screen(self):
         self.clear_window()
-        frame = tk.Frame(self.root, padx=20, pady=20)
-        frame.pack(expand=True)
-        tk.Label(frame, text="NeuroChat", font=("Arial", 24, "bold")).pack(pady=20)
-        tk.Label(frame, text="Имя:").pack(anchor=tk.W)
-        username_entry = tk.Entry(frame, width=30)
+        frame = FrameWidget(self.root)
+        frame.pack(expand=True, padx=20, pady=20)
+        LabelWidget(frame, text="NeuroChat", font=("Arial", 24, "bold")).pack(pady=20)
+        LabelWidget(frame, text="Имя:").pack(anchor=tk.W)
+        username_entry = EntryWidget(frame, width=30)
         username_entry.pack(pady=5)
-        tk.Label(frame, text="Пароль:").pack(anchor=tk.W)
-        password_entry = tk.Entry(frame, width=30, show="*")
+        LabelWidget(frame, text="Пароль:").pack(anchor=tk.W)
+        password_entry = EntryWidget(frame, width=30, show="*")
         password_entry.pack(pady=5)
         
         def perform_login(username, password):
@@ -182,10 +204,10 @@ class ChatClient:
             except Exception as e:
                 messagebox.showerror("Ошибка", str(e))
         
-        button_frame = tk.Frame(frame)
+        button_frame = FrameWidget(frame)
         button_frame.pack(pady=10)
-        tk.Button(button_frame, text="Вход", command=login, width=15).pack(side=tk.LEFT, padx=5)
-        tk.Button(button_frame, text="Регистрация", command=register, width=15).pack(side=tk.LEFT, padx=5)
+        ButtonWidget(button_frame, text="Вход", command=login, width=120).pack(side=tk.LEFT, padx=5)
+        ButtonWidget(button_frame, text="Регистрация", command=register, width=120).pack(side=tk.LEFT, padx=5)
     
     def create_chat_screen(self):
         self.clear_window()
@@ -198,40 +220,46 @@ class ChatClient:
         menubar.add_cascade(label="Файл", menu=file_menu)
         file_menu.add_command(label="Выход", command=self.logout)
         
-        main_frame = tk.Frame(self.root)
+        main_frame = FrameWidget(self.root)
         main_frame.pack(fill=tk.BOTH, expand=True)
-        
-        left_frame = tk.Frame(main_frame, width=250, bg="#f0f0f0")
-        left_frame.pack(side=tk.LEFT, fill=tk.BOTH, padx=5, pady=5)
+
+        left_frame = FrameWidget(main_frame, width=260)
+        left_frame.pack(side=tk.LEFT, fill=tk.BOTH, padx=8, pady=8)
         left_frame.pack_propagate(False)
-        
-        tk.Label(left_frame, text="Чаты", font=("Arial", 14, "bold"), bg="#f0f0f0").pack(pady=10)
-        tk.Button(left_frame, text="+ Новый", command=self.add_new_chat, width=20, bg="#4CAF50", fg="white").pack(pady=5)
-        
+
+        LabelWidget(left_frame, text="Чаты", font=("Arial", 14, "bold")).pack(pady=10)
+        ButtonWidget(left_frame, text="+ Новый", command=self.add_new_chat, width=150).pack(pady=6)
+
         self.chats_listbox = tk.Listbox(left_frame, height=30, width=30)
         self.chats_listbox.pack(pady=5, padx=5, fill=tk.BOTH, expand=True)
         self.chats_listbox.bind('<<ListboxSelect>>', self.on_chat_selected)
-        
-        right_frame = tk.Frame(main_frame)
-        right_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=5, pady=5)
-        
-        self.chat_header = tk.Label(right_frame, text="Выберите чат", font=("Arial", 12, "bold"))
+
+        right_frame = FrameWidget(main_frame)
+        right_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=8, pady=8)
+
+        self.chat_header = LabelWidget(right_frame, text="Выберите чат", font=("Arial", 12, "bold"))
         self.chat_header.pack(pady=10)
-        
-        self.chat_display = scrolledtext.ScrolledText(right_frame, height=20, width=60, state=tk.DISABLED)
+
+        # Use TextWidget (CTkTextbox or ScrolledText)
+        self.chat_display = TextWidget(right_frame, height=12, width=60)
+        try:
+            # CTkTextbox doesn't support state via constructor
+            self.chat_display.configure(state=tk.DISABLED)
+        except Exception:
+            pass
         self.chat_display.pack(padx=5, pady=5, fill=tk.BOTH, expand=True)
-        
-        input_frame = tk.Frame(right_frame)
+
+        input_frame = FrameWidget(right_frame)
         input_frame.pack(padx=5, pady=5, fill=tk.BOTH, expand=True)
-        
-        tk.Label(input_frame, text="Сообщение:").pack(anchor=tk.W)
-        
+
+        LabelWidget(input_frame, text="Сообщение:").pack(anchor=tk.W)
+
         # Многострочное поле ввода
-        self.message_entry = scrolledtext.ScrolledText(input_frame, height=4, width=60, wrap=tk.WORD)
+        self.message_entry = TextWidget(input_frame, height=4, width=60)
         self.message_entry.pack(side=tk.LEFT, pady=5, padx=(0, 5), fill=tk.BOTH, expand=True)
-        
+
         # Кнопка отправить справа
-        send_btn = tk.Button(input_frame, text="Отправить", command=self.send_message, width=10, bg="#2196F3", fg="white")
+        send_btn = ButtonWidget(input_frame, text="Отправить", command=self.send_message, width=120)
         send_btn.pack(side=tk.LEFT, padx=5)
         
         # Bind Enter и Shift+Enter
@@ -427,6 +455,9 @@ class ChatClient:
             w.destroy()
 
 if __name__ == "__main__":
-    root = tk.Tk()
+    if USE_CTK:
+        root = ctk.CTk()
+    else:
+        root = tk.Tk()
     app = ChatClient(root)
     root.mainloop()
